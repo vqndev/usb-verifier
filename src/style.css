@@ -1,0 +1,74 @@
+:root {
+  color-scheme: dark;
+  font-family: system-ui, sans-serif;
+}
+
+body {
+  margin: 0;
+  padding: 2rem;
+  background: #111;
+  color: #eee;
+}
+
+#app {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+h1 {
+  margin-top: 0;
+}
+
+.support {
+  font-size: 0.9rem;
+  color: #9ad;
+  margin: 0 0 1rem;
+}
+
+.controls {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+button {
+  padding: 0.6rem 1rem;
+  background: #2563eb;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.95rem;
+}
+
+button:hover { background: #1d4ed8; }
+button.stop { background: #b91c1c; }
+button.stop:hover { background: #991b1b; }
+button.clear { background: #374151; }
+button.clear:hover { background: #1f2937; }
+
+.status {
+  font-family: ui-monospace, monospace;
+  color: #9ca3af;
+  margin: 0.5rem 0 1rem;
+}
+
+#output {
+  background: #000;
+  border: 1px solid #333;
+  border-radius: 6px;
+  padding: 1rem;
+  min-height: 300px;
+  max-height: 70vh;
+  overflow-y: auto;
+  font-family: ui-monospace, monospace;
+  font-size: 0.9rem;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.entry { margin-bottom: 0.75rem; }
+.entry .meta { color: #6b7280; font-size: 0.8rem; }
+.entry .hex { color: #86efac; }
+.entry .ascii { color: #fbbf24; margin-top: 0.2rem; }

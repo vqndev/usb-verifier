@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>USB Verifier</title>
+  </head>
+  <body>
+    <div id="app">
+      <h1>USB Verifier</h1>
+      <p class="support" id="support"></p>
+      <div class="controls">
+        <button data-mode="serial">Pick Serial Device</button>
+        <button data-mode="hid">Pick HID Device</button>
+        <button data-mode="keyboard">Capture HID Keyboard</button>
+        <button data-mode="stop" class="stop">Stop</button>
+        <button data-mode="clear" class="clear">Clear</button>
+      </div>
+      <p class="status" id="status">Idle.</p>
+      <pre id="output"></pre>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
