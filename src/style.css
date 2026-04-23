@@ -169,3 +169,33 @@ button.clear:hover { background: #1f2937; }
 .diff-view .add { background: #064e3b; color: #a7f3d0; }
 .diff-view .del { background: #7f1d1d; color: #fecaca; text-decoration: line-through; }
 .diff-view .section-label { color: #9ca3af; font-weight: bold; margin-top: 0.5rem; display: block; }
+
+.io-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+.io-status { color: #9ca3af; font-family: ui-monospace, monospace; font-size: 0.85rem; }
+
+.dl-table {
+  width: 100%;
+  margin-top: 1rem;
+  border-collapse: collapse;
+  font-family: ui-monospace, monospace;
+  font-size: 0.85rem;
+}
+.dl-table th, .dl-table td {
+  padding: 0.35rem 0.6rem;
+  text-align: left;
+  border-bottom: 1px solid #1f2937;
+  vertical-align: top;
+  word-break: break-all;
+}
+.dl-table th { color: #9ca3af; font-weight: normal; background: #111827; }
+.dl-table tr.match td { color: #a7f3d0; }
+.dl-table tr.mismatch td { color: #fecaca; background: rgba(127, 29, 29, 0.2); }
+.dl-table tr.only td { color: #fbbf24; }
+.dl-table .code { color: #93c5fd; font-weight: bold; }
+.dl-table .field-name { color: #9ca3af; font-size: 0.75rem; }
+.dl-header { color: #9ca3af; font-size: 0.9rem; margin-top: 1rem; font-weight: bold; }

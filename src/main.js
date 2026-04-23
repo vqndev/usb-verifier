@@ -10,6 +10,115 @@ supportEl.textContent = [
 
 const diffVerdict = document.getElementById('diff-verdict');
 const diffView = document.getElementById('diff-view');
+const dlDiff = document.getElementById('dl-diff');
+const ioStatus = document.getElementById('io-status');
+
+const AAMVA_FIELDS = {
+  DAA: 'Full Name (legacy)',
+  DAB: 'Family Name (legacy)',
+  DAC: 'First Name',
+  DAD: 'Middle Name',
+  DAE: 'Name Suffix',
+  DAF: 'Name Prefix',
+  DAG: 'Address Street 1',
+  DAH: 'Address Street 2',
+  DAI: 'Address City',
+  DAJ: 'Address State',
+  DAK: 'Address Postal Code',
+  DAL: 'Residence Street 1',
+  DAM: 'Residence Street 2',
+  DAN: 'Residence City',
+  DAO: 'Residence State',
+  DAP: 'Residence Postal Code',
+  DAQ: 'Customer ID',
+  DAR: 'Vehicle Class (legacy)',
+  DAS: 'Restriction Codes (legacy)',
+  DAT: 'Endorsements (legacy)',
+  DAU: 'Height',
+  DAV: 'Height (cm)',
+  DAW: 'Weight (lbs)',
+  DAX: 'Weight (kg)',
+  DAY: 'Eye Color',
+  DAZ: 'Hair Color',
+  DBA: 'Expiration Date',
+  DBB: 'Date of Birth',
+  DBC: 'Sex',
+  DBD: 'Issue Date',
+  DBE: 'Issuer IIN',
+  DBF: 'Additional Jurisdiction Info',
+  DBG: 'Name Suffix',
+  DBH: 'Organ Donor (legacy)',
+  DBI: 'Non-Resident',
+  DBJ: 'Unique Customer Idx',
+  DBK: 'SSN',
+  DBL: 'Date of Birth (legacy)',
+  DBM: 'SSN (legacy)',
+  DBN: 'Alias Family Name',
+  DBO: 'Alias Given Name',
+  DBP: 'Alias Middle Name',
+  DBQ: 'Alias Prefix Name',
+  DBR: 'Name Suffix',
+  DBS: 'Alias Suffix',
+  DCA: 'Vehicle Class',
+  DCB: 'Restriction Codes',
+  DCD: 'Endorsement Codes',
+  DCE: 'Physical Description Weight Range',
+  DCF: 'Document Discriminator',
+  DCG: 'Country ID',
+  DCH: 'Federal Commercial Vehicle Codes',
+  DCI: 'Place of Birth',
+  DCJ: 'Audit Information',
+  DCK: 'Inventory Control Number',
+  DCL: 'Race/Ethnicity',
+  DCM: 'Std Vehicle Classification',
+  DCN: 'Std Endorsement Code',
+  DCO: 'Std Restriction Code',
+  DCP: 'Std Vehicle Description',
+  DCQ: 'Std Endorsement Description',
+  DCR: 'Std Restriction Description',
+  DCS: 'Family Name',
+  DCT: 'First + Middle Name',
+  DCU: 'Name Suffix',
+  DDA: 'Compliance Type',
+  DDB: 'Card Revision Date',
+  DDC: 'HazMat Expiration',
+  DDD: 'Limited Duration Indicator',
+  DDE: 'Family Name Truncation',
+  DDF: 'First Name Truncation',
+  DDG: 'Middle Name Truncation',
+  DDH: 'Under 18 Until',
+  DDI: 'Under 19 Until',
+  DDJ: 'Under 21 Until',
+  DDK: 'Organ Donor',
+  DDL: 'Veteran Indicator',
+};
+
+function parseAAMVA(bytes) {
+  if (!bytes) return null;
+  const text = new TextDecoder('latin1').decode(bytes);
+  if (!/ANSI/.test(text)) return null;
+  const fields = {};
+  const lines = text.split(/[\n\r\x1e]/);
+  for (let line of lines) {
+    if (/ANSI/.test(line)) {
+      const m = line.match(/DL([A-Z]{2}[A-Z0-9].*)$/);
+      if (m) line = m[1];
+      else continue;
+    }
+    const prefix = line.match(/^(?:DL|Z[A-Z0-9])(?=[A-Z]{2}[A-Z0-9])/);
+    if (prefix) line = line.slice(2);
+    if (line.length < 3) continue;
+    const code = line.slice(0, 3);
+    if (!/^[A-Z]{2}[A-Z0-9]$/.test(code)) continue;
+    const value = line.slice(3).trim();
+    if (!(code in fields)) fields[code] = value;
+  }
+  return Object.keys(fields).length ? fields : null;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
 
 const slots = {};
 for (const el of document.querySelectorAll('.slot')) {
@@ -280,7 +389,130 @@ function renderDiff() {
   diffView.innerHTML =
     `<span class="section-label">HEX DIFF (−Device 1, +Device 2)</span>${hexHtml}\n\n` +
     `<span class="section-label">ASCII DIFF</span>${asciiHtml}`;
+
+  renderDlDiff(a, b);
 }
+
+function renderDlDiff(a, b) {
+  const fa = parseAAMVA(a);
+  const fb = parseAAMVA(b);
+  if (!fa && !fb) {
+    dlDiff.innerHTML = '';
+    return;
+  }
+
+  const header = `<div class="dl-header">AAMVA Driver's License Fields ${fa ? '(D1: detected)' : '(D1: not detected)'} ${fb ? '(D2: detected)' : '(D2: not detected)'}</div>`;
+  const keys = Array.from(new Set([...Object.keys(fa || {}), ...Object.keys(fb || {})])).sort();
+
+  let rows = '';
+  for (const k of keys) {
+    const va = fa?.[k];
+    const vb = fb?.[k];
+    const bothPresent = va !== undefined && vb !== undefined;
+    const match = bothPresent && va === vb;
+    const cls = !bothPresent ? 'only' : match ? 'match' : 'mismatch';
+    const indicator = !bothPresent ? '–' : match ? '✓' : '✗';
+    rows += `<tr class="${cls}">
+      <td><span class="code">${k}</span><div class="field-name">${escapeHtml(AAMVA_FIELDS[k] || '')}</div></td>
+      <td>${escapeHtml(va ?? '—')}</td>
+      <td>${escapeHtml(vb ?? '—')}</td>
+      <td>${indicator}</td>
+    </tr>`;
+  }
+
+  dlDiff.innerHTML = header + `<table class="dl-table">
+    <thead><tr><th>Field</th><th>Device 1</th><th>Device 2</th><th></th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+function bytesToHexCompact(bytes) {
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+function hexToBytes(s) {
+  const clean = s.replace(/[\s:,]/g, '').toLowerCase();
+  if (!clean || !/^[0-9a-f]+$/.test(clean) || clean.length % 2) return null;
+  const out = new Uint8Array(clean.length / 2);
+  for (let i = 0; i < out.length; i++) out[i] = parseInt(clean.slice(i * 2, i * 2 + 2), 16);
+  return out;
+}
+
+function injectBytesIntoSlot(slot, bytes, label) {
+  const entry = createEntry(slot, label);
+  updateEntry(entry, bytes);
+  entry.classList.remove('pending');
+  slot.lastBytes = bytes;
+}
+
+async function exportToClipboard() {
+  const a = slots['1'].lastBytes;
+  const b = slots['2'].lastBytes;
+  if (!a && !b) {
+    ioStatus.textContent = 'Nothing to export.';
+    return;
+  }
+  const text = `${a ? bytesToHexCompact(a) : ''}\n---SPLIT---\n${b ? bytesToHexCompact(b) : ''}`;
+  try {
+    await navigator.clipboard.writeText(text);
+    ioStatus.textContent = `Exported ${(a?.length ?? 0)} + ${(b?.length ?? 0)} bytes.`;
+  } catch (e) {
+    ioStatus.textContent = `Export failed: ${e.message}`;
+  }
+}
+
+async function importFromClipboard() {
+  let text;
+  try {
+    text = await navigator.clipboard.readText();
+  } catch (e) {
+    ioStatus.textContent = `Read failed: ${e.message}`;
+    return;
+  }
+  const parts = text.split('---SPLIT---');
+  if (parts.length !== 2) {
+    ioStatus.textContent = 'Clipboard missing ---SPLIT--- delimiter.';
+    return;
+  }
+  const a = hexToBytes(parts[0]);
+  const b = hexToBytes(parts[1]);
+  if (!a && !b) {
+    ioStatus.textContent = 'No valid hex on either side.';
+    return;
+  }
+  if (a) injectBytesIntoSlot(slots['1'], a, 'imported');
+  if (b) injectBytesIntoSlot(slots['2'], b, 'imported');
+  renderDiff();
+  ioStatus.textContent = `Imported ${(a?.length ?? 0)} + ${(b?.length ?? 0)} bytes.`;
+}
+
+function exportToFile() {
+  const a = slots['1'].lastBytes;
+  const b = slots['2'].lastBytes;
+  if (!a && !b) {
+    ioStatus.textContent = 'Nothing to export.';
+    return;
+  }
+  const text = `${a ? bytesToHexCompact(a) : ''}\n---SPLIT---\n${b ? bytesToHexCompact(b) : ''}`;
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const ts = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+  const filename = `${ts}_diff.txt`;
+  const blob = new Blob([text], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a_el = document.createElement('a');
+  a_el.href = url;
+  a_el.download = filename;
+  document.body.appendChild(a_el);
+  a_el.click();
+  document.body.removeChild(a_el);
+  URL.revokeObjectURL(url);
+  ioStatus.textContent = `Saved ${filename}.`;
+}
+
+document.getElementById('export-btn').addEventListener('click', exportToClipboard);
+document.getElementById('export-file-btn').addEventListener('click', exportToFile);
+document.getElementById('import-btn').addEventListener('click', importFromClipboard);
 
 document.addEventListener('click', async (e) => {
   const copyBtn = e.target.closest('button[data-copy]');

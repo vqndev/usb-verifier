@@ -38,10 +38,18 @@
         </section>
       </div>
 
+      <div class="io-row">
+        <button id="export-btn">Export to Clipboard</button>
+        <button id="export-file-btn">Export to File</button>
+        <button id="import-btn">Import from Clipboard</button>
+        <span class="io-status" id="io-status"></span>
+      </div>
+
       <section class="diff-panel">
         <h2>Diff</h2>
         <div class="diff-verdict" id="diff-verdict">Waiting for scans on both devices…</div>
         <pre class="diff-view" id="diff-view"></pre>
+        <div id="dl-diff"></div>
       </section>
     </div>
     <script type="module" src="/src/main.js"></script>
