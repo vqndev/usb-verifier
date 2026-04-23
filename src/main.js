@@ -1,19 +1,27 @@
 import './style.css';
+import { diffArrays } from 'diff';
 
-const output = document.getElementById('output');
-const statusEl = document.getElementById('status');
 const supportEl = document.getElementById('support');
-
 supportEl.textContent = [
   `Serial: ${'serial' in navigator ? 'yes' : 'no'}`,
   `HID: ${'hid' in navigator ? 'yes' : 'no'}`,
   `Keyboard: always`,
 ].join('  |  ');
 
-let active = null;
+const diffVerdict = document.getElementById('diff-verdict');
+const diffView = document.getElementById('diff-view');
 
-function setStatus(msg) {
-  statusEl.textContent = msg;
+const slots = {};
+for (const el of document.querySelectorAll('.slot')) {
+  const id = el.dataset.slot;
+  slots[id] = {
+    id,
+    el,
+    output: el.querySelector('.output'),
+    statusEl: el.querySelector('.status'),
+    active: null,
+    lastBytes: null,
+  };
 }
 
 function toHex(bytes) {
@@ -24,7 +32,11 @@ function toAscii(bytes) {
   return Array.from(bytes, (b) => (b >= 0x20 && b < 0x7f ? String.fromCharCode(b) : '.')).join('');
 }
 
-function createEntry(source) {
+function setStatus(slot, msg) {
+  slot.statusEl.textContent = msg;
+}
+
+function createEntry(slot, source) {
   const entry = document.createElement('div');
   entry.className = 'entry pending';
   entry.innerHTML = `
@@ -32,14 +44,14 @@ function createEntry(source) {
     <div class="hex"></div>
     <div class="ascii"></div>
     <div class="copy-row">
-      <button data-copy="hex">Copy Hex</button>
-      <button data-copy="hex-compact">Copy Hex (compact)</button>
-      <button data-copy="ascii">Copy ASCII</button>
-      <button data-copy="bytes">Copy Byte Array</button>
-      <button data-copy="base64">Copy Base64</button>
+      <button data-copy="hex">Hex</button>
+      <button data-copy="hex-compact">Hex (compact)</button>
+      <button data-copy="ascii">ASCII</button>
+      <button data-copy="bytes">Byte Array</button>
+      <button data-copy="base64">Base64</button>
     </div>
   `;
-  output.prepend(entry);
+  slot.output.prepend(entry);
   return entry;
 }
 
@@ -70,32 +82,19 @@ async function copyFromEntry(entry, kind) {
   }
   try {
     await navigator.clipboard.writeText(text);
-    flashCopied(entry, kind);
+    const btn = entry.querySelector(`button[data-copy="${kind}"]`);
+    if (btn) {
+      const orig = btn.textContent;
+      btn.textContent = 'Copied!';
+      btn.classList.add('copied');
+      setTimeout(() => { btn.textContent = orig; btn.classList.remove('copied'); }, 900);
+    }
   } catch (e) {
-    setStatus(`Copy failed: ${e.message}`);
+    console.error('Copy failed', e);
   }
 }
 
-function flashCopied(entry, kind) {
-  const btn = entry.querySelector(`button[data-copy="${kind}"]`);
-  if (!btn) return;
-  const orig = btn.textContent;
-  btn.textContent = 'Copied!';
-  btn.classList.add('copied');
-  setTimeout(() => {
-    btn.textContent = orig;
-    btn.classList.remove('copied');
-  }, 900);
-}
-
-output.addEventListener('click', (e) => {
-  const btn = e.target.closest('button[data-copy]');
-  if (!btn) return;
-  const entry = btn.closest('.entry');
-  if (entry) copyFromEntry(entry, btn.dataset.copy);
-});
-
-function makeAccumulator(source, idleMs = 150) {
+function makeAccumulator(slot, source, idleMs = 150) {
   let chunks = [];
   let total = 0;
   let timer = null;
@@ -113,44 +112,44 @@ function makeAccumulator(source, idleMs = 150) {
 
   const flush = () => {
     if (!total || !entry) return;
-    updateEntry(entry, merge());
+    const merged = merge();
+    updateEntry(entry, merged);
     entry.classList.remove('pending');
+    slot.lastBytes = merged;
     chunks = [];
     total = 0;
     entry = null;
+    renderDiff();
   };
 
   return {
     push(bytes) {
       chunks.push(bytes);
       total += bytes.length;
-      if (!entry) entry = createEntry(source);
+      if (!entry) entry = createEntry(slot, source);
       updateEntry(entry, merge());
       clearTimeout(timer);
       timer = setTimeout(flush, idleMs);
     },
-    flush() {
-      clearTimeout(timer);
-      flush();
-    },
+    flush() { clearTimeout(timer); flush(); },
   };
 }
 
-async function stop() {
-  if (!active) return;
-  try { await active.stop(); } catch (e) { console.error(e); }
-  active = null;
-  setStatus('Stopped.');
+async function stopSlot(slot) {
+  if (!slot.active) return;
+  try { await slot.active.stop(); } catch (e) { console.error(e); }
+  slot.active = null;
+  setStatus(slot, 'Stopped.');
 }
 
-async function startSerial() {
+async function startSerial(slot) {
   if (!('serial' in navigator)) throw new Error('Web Serial not supported');
   const port = await navigator.serial.requestPort();
   await port.open({ baudRate: 9600 });
-  setStatus('Serial open @ 9600. Reading…');
+  setStatus(slot, 'Serial open @ 9600. Reading…');
 
   const reader = port.readable.getReader();
-  const acc = makeAccumulator('serial');
+  const acc = makeAccumulator(slot, 'serial');
   let stopped = false;
 
   (async () => {
@@ -161,11 +160,11 @@ async function startSerial() {
         if (value && value.byteLength) acc.push(value);
       }
     } catch (e) {
-      if (!stopped) setStatus(`Serial error: ${e.message}`);
+      if (!stopped) setStatus(slot, `Serial error: ${e.message}`);
     }
   })();
 
-  active = {
+  slot.active = {
     async stop() {
       stopped = true;
       acc.flush();
@@ -176,7 +175,7 @@ async function startSerial() {
   };
 }
 
-async function startHid() {
+async function startHid(slot) {
   if (!('hid' in navigator)) throw new Error('WebHID not supported');
   const devices = await navigator.hid.requestDevice({
     filters: [{ usagePage: 0x8c }],
@@ -184,39 +183,17 @@ async function startHid() {
   if (!devices.length) throw new Error('No device selected');
   const device = devices[0];
 
-  const info = {
-    productName: device.productName,
-    vendorId: '0x' + device.vendorId.toString(16).padStart(4, '0'),
-    productId: '0x' + device.productId.toString(16).padStart(4, '0'),
-    opened: device.opened,
-    collections: device.collections.map((c) => ({
-      usagePage: '0x' + c.usagePage.toString(16),
-      usage: '0x' + c.usage.toString(16),
-      inputReports: c.inputReports?.length ?? 0,
-      outputReports: c.outputReports?.length ?? 0,
-      featureReports: c.featureReports?.length ?? 0,
-    })),
-  };
-  console.log('HID device picked:', device, info);
-  const infoEntry = createEntry('hid info');
-  updateEntry(infoEntry, new TextEncoder().encode(JSON.stringify(info)));
-  infoEntry.classList.remove('pending');
-
   if (!device.opened) {
     try {
       await device.open();
     } catch (err) {
-      console.error('HID open failed:', err);
-      const hint =
-        '\nLinux hint: the kernel usbhid driver may have claimed this device. ' +
-        'Try: sudo rmmod usbhid (temporary) or add a udev rule / unbind the interface. ' +
-        'Keyboard-class devices are often blocked by the browser for security.';
+      const hint = ' (Linux: needs udev rule granting hidraw access)';
       throw new Error(`${err.name || 'Error'}: ${err.message}${hint}`);
     }
   }
-  setStatus(`HID open: ${device.productName} (vid=${info.vendorId} pid=${info.productId})`);
+  setStatus(slot, `HID open: ${device.productName} (${device.vendorId.toString(16)}:${device.productId.toString(16)})`);
 
-  const acc = makeAccumulator('hid');
+  const acc = makeAccumulator(slot, 'hid');
   const handler = (event) => {
     const data = new Uint8Array(event.data.buffer);
     const combined = new Uint8Array(1 + data.length);
@@ -226,7 +203,7 @@ async function startHid() {
   };
   device.addEventListener('inputreport', handler);
 
-  active = {
+  slot.active = {
     async stop() {
       device.removeEventListener('inputreport', handler);
       acc.flush();
@@ -235,11 +212,12 @@ async function startHid() {
   };
 }
 
-async function startKeyboard() {
-  setStatus('Keyboard capture active. Scan a barcode (focus the page).');
-  const acc = makeAccumulator('keyboard', 200);
+async function startKeyboard(slot) {
+  setStatus(slot, 'Keyboard capture active. Focus this panel and scan.');
+  const acc = makeAccumulator(slot, 'keyboard', 200);
 
   const onKey = (e) => {
+    if (!slot.el.contains(document.activeElement) && document.activeElement !== document.body) return;
     let byte;
     if (e.key === 'Enter') byte = 0x0a;
     else if (e.key === 'Tab') byte = 0x09;
@@ -249,9 +227,11 @@ async function startKeyboard() {
     acc.push(new Uint8Array([byte]));
   };
 
+  slot.el.tabIndex = 0;
+  slot.el.focus();
   window.addEventListener('keydown', onKey);
 
-  active = {
+  slot.active = {
     async stop() {
       window.removeEventListener('keydown', onKey);
       acc.flush();
@@ -259,19 +239,78 @@ async function startKeyboard() {
   };
 }
 
-document.querySelector('.controls').addEventListener('click', async (e) => {
-  const btn = e.target.closest('button');
-  if (!btn) return;
-  const mode = btn.dataset.mode;
+function renderDiff() {
+  const a = slots['1'].lastBytes;
+  const b = slots['2'].lastBytes;
+
+  if (!a || !b) {
+    diffVerdict.className = 'diff-verdict';
+    diffVerdict.textContent = a || b
+      ? `Waiting for scan on Device ${a ? '2' : '1'}…`
+      : 'Waiting for scans on both devices…';
+    diffView.innerHTML = '';
+    return;
+  }
+
+  const equal = a.length === b.length && a.every((v, i) => v === b[i]);
+  if (equal) {
+    diffVerdict.className = 'diff-verdict match';
+    diffVerdict.textContent = `✓ MATCH — ${a.length} bytes identical`;
+  } else {
+    diffVerdict.className = 'diff-verdict mismatch';
+    diffVerdict.textContent = `✗ DIFFER — Device 1: ${a.length} bytes, Device 2: ${b.length} bytes`;
+  }
+
+  const parts = diffArrays(Array.from(a), Array.from(b));
+  const hexHtml = parts.map((p) => {
+    const hex = p.value.map((v) => v.toString(16).padStart(2, '0')).join(' ');
+    if (p.added) return `<span class="add">+${hex}</span>`;
+    if (p.removed) return `<span class="del">-${hex}</span>`;
+    return `<span class="eq">${hex}</span>`;
+  }).join(' ');
+
+  const asciiParts = diffArrays(Array.from(a), Array.from(b));
+  const asciiHtml = asciiParts.map((p) => {
+    const s = p.value.map((v) => (v >= 0x20 && v < 0x7f ? String.fromCharCode(v) : '.')).join('');
+    if (p.added) return `<span class="add">${s}</span>`;
+    if (p.removed) return `<span class="del">${s}</span>`;
+    return `<span class="eq">${s}</span>`;
+  }).join('');
+
+  diffView.innerHTML =
+    `<span class="section-label">HEX DIFF (−Device 1, +Device 2)</span>${hexHtml}\n\n` +
+    `<span class="section-label">ASCII DIFF</span>${asciiHtml}`;
+}
+
+document.addEventListener('click', async (e) => {
+  const copyBtn = e.target.closest('button[data-copy]');
+  if (copyBtn) {
+    const entry = copyBtn.closest('.entry');
+    if (entry) copyFromEntry(entry, copyBtn.dataset.copy);
+    return;
+  }
+
+  const modeBtn = e.target.closest('.slot button[data-mode]');
+  if (!modeBtn) return;
+
+  const slotEl = modeBtn.closest('.slot');
+  const slot = slots[slotEl.dataset.slot];
+  const mode = modeBtn.dataset.mode;
+
   try {
-    if (mode === 'stop') return stop();
-    if (mode === 'clear') { output.innerHTML = ''; return; }
-    await stop();
-    if (mode === 'serial') await startSerial();
-    else if (mode === 'hid') await startHid();
-    else if (mode === 'keyboard') await startKeyboard();
+    if (mode === 'stop') return stopSlot(slot);
+    if (mode === 'clear') {
+      slot.output.innerHTML = '';
+      slot.lastBytes = null;
+      renderDiff();
+      return;
+    }
+    await stopSlot(slot);
+    if (mode === 'serial') await startSerial(slot);
+    else if (mode === 'hid') await startHid(slot);
+    else if (mode === 'keyboard') await startKeyboard(slot);
   } catch (err) {
-    setStatus(`Error: ${err.message}`);
+    setStatus(slot, `Error: ${err.message}`);
     console.error(err);
   }
 });
