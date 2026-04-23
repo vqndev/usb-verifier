@@ -76,7 +76,9 @@ async function startSerial() {
 
 async function startHid() {
   if (!('hid' in navigator)) throw new Error('WebHID not supported');
-  const devices = await navigator.hid.requestDevice({ filters: [] });
+  const devices = await navigator.hid.requestDevice({
+    filters: [{ usagePage: 0x8c }],
+  });
   if (!devices.length) throw new Error('No device selected');
   const device = devices[0];
 
