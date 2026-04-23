@@ -68,7 +68,30 @@ button.clear:hover { background: #1f2937; }
   word-break: break-all;
 }
 
-.entry { margin-bottom: 0.75rem; }
-.entry .meta { color: #6b7280; font-size: 0.8rem; }
+.entry {
+  margin-bottom: 0.75rem;
+  border-left: 2px solid transparent;
+  padding-left: 0.5rem;
+  transition: border-color 0.2s;
+}
+.entry.pending { border-left-color: #fbbf24; }
+.entry .meta { color: #6b7280; font-size: 0.8rem; display: flex; align-items: center; gap: 0.4rem; }
 .entry .hex { color: #86efac; }
 .entry .ascii { color: #fbbf24; margin-top: 0.2rem; }
+
+.dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #4b5563;
+}
+.entry.pending .dot {
+  background: #fbbf24;
+  animation: pulse 0.8s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(1.3); }
+}

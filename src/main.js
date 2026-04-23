@@ -24,39 +24,55 @@ function toAscii(bytes) {
   return Array.from(bytes, (b) => (b >= 0x20 && b < 0x7f ? String.fromCharCode(b) : '.')).join('');
 }
 
-function logBytes(source, bytes) {
+function createEntry(source) {
   const entry = document.createElement('div');
-  entry.className = 'entry';
+  entry.className = 'entry pending';
   entry.innerHTML = `
-    <div class="meta">${source} · ${bytes.length} bytes</div>
-    <div class="hex">${toHex(bytes)}</div>
-    <div class="ascii">${toAscii(bytes)}</div>
+    <div class="meta"><span class="dot"></span> ${source} · <span class="count">0</span> bytes</div>
+    <div class="hex"></div>
+    <div class="ascii"></div>
   `;
   output.prepend(entry);
+  return entry;
+}
+
+function updateEntry(entry, bytes) {
+  entry.querySelector('.count').textContent = bytes.length;
+  entry.querySelector('.hex').textContent = toHex(bytes);
+  entry.querySelector('.ascii').textContent = toAscii(bytes);
 }
 
 function makeAccumulator(source, idleMs = 150) {
   let chunks = [];
   let total = 0;
   let timer = null;
+  let entry = null;
 
-  const flush = () => {
-    if (!total) return;
+  const merge = () => {
     const merged = new Uint8Array(total);
     let offset = 0;
     for (const c of chunks) {
       merged.set(c, offset);
       offset += c.length;
     }
+    return merged;
+  };
+
+  const flush = () => {
+    if (!total || !entry) return;
+    updateEntry(entry, merge());
+    entry.classList.remove('pending');
     chunks = [];
     total = 0;
-    logBytes(source, merged);
+    entry = null;
   };
 
   return {
     push(bytes) {
       chunks.push(bytes);
       total += bytes.length;
+      if (!entry) entry = createEntry(source);
+      updateEntry(entry, merge());
       clearTimeout(timer);
       timer = setTimeout(flush, idleMs);
     },
@@ -129,7 +145,9 @@ async function startHid() {
     })),
   };
   console.log('HID device picked:', device, info);
-  logBytes('hid info', new TextEncoder().encode(JSON.stringify(info)));
+  const infoEntry = createEntry('hid info');
+  updateEntry(infoEntry, new TextEncoder().encode(JSON.stringify(info)));
+  infoEntry.classList.remove('pending');
 
   if (!device.opened) {
     try {
@@ -166,28 +184,16 @@ async function startHid() {
 
 async function startKeyboard() {
   setStatus('Keyboard capture active. Scan a barcode (focus the page).');
-  let buffer = [];
-  let flushTimer = null;
-  const FLUSH_MS = 80;
-
-  const flush = () => {
-    if (!buffer.length) return;
-    const bytes = new Uint8Array(buffer.map((c) => c.charCodeAt(0) & 0xff));
-    logBytes('keyboard', bytes);
-    buffer = [];
-  };
+  const acc = makeAccumulator('keyboard', 200);
 
   const onKey = (e) => {
-    if (e.key === 'Enter') {
-      flush();
-      e.preventDefault();
-      return;
-    }
-    if (e.key.length === 1) {
-      buffer.push(e.key);
-      clearTimeout(flushTimer);
-      flushTimer = setTimeout(flush, FLUSH_MS);
-    }
+    let byte;
+    if (e.key === 'Enter') byte = 0x0a;
+    else if (e.key === 'Tab') byte = 0x09;
+    else if (e.key.length === 1) byte = e.key.charCodeAt(0) & 0xff;
+    else return;
+    e.preventDefault();
+    acc.push(new Uint8Array([byte]));
   };
 
   window.addEventListener('keydown', onKey);
@@ -195,8 +201,7 @@ async function startKeyboard() {
   active = {
     async stop() {
       window.removeEventListener('keydown', onKey);
-      clearTimeout(flushTimer);
-      flush();
+      acc.flush();
     },
   };
 }
