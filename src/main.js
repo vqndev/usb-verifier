@@ -93,6 +93,41 @@ const AAMVA_FIELDS = {
   DDL: 'Veteran Indicator',
 };
 
+const HEADER_LABELS = {
+  complianceIndicator: 'Compliance Indicator',
+  fileType: 'File Type',
+  iin: 'Issuer Identification Number (IIN)',
+  aamvaVersion: 'AAMVA Version',
+  jurisdictionVersion: 'Jurisdiction Version',
+  subfileCount: 'Number of Subfiles',
+};
+
+function parseAAMVAHeader(bytes) {
+  if (!bytes) return null;
+  const text = new TextDecoder('latin1').decode(bytes);
+  const m = text.match(/(@)[\s\S]*?(ANSI )(\d{6})(\d{2})(\d{2})(\d{2})((?:[A-Z0-9]{2}\d{8}){1,})/);
+  if (!m) return null;
+  const [, compliance, fileType, iin, aamvaVersion, jvVersion, subfileCount, subfilesStr] = m;
+  const count = parseInt(subfileCount, 10);
+  const subfiles = [];
+  for (let i = 0; i < count && i * 10 + 10 <= subfilesStr.length; i++) {
+    subfiles.push({
+      type: subfilesStr.slice(i * 10, i * 10 + 2),
+      offset: subfilesStr.slice(i * 10 + 2, i * 10 + 6),
+      length: subfilesStr.slice(i * 10 + 6, i * 10 + 10),
+    });
+  }
+  return {
+    complianceIndicator: compliance,
+    fileType: fileType.trim(),
+    iin,
+    aamvaVersion,
+    jurisdictionVersion: jvVersion,
+    subfileCount,
+    subfiles,
+  };
+}
+
 function parseAAMVA(bytes) {
   if (!bytes) return null;
   const text = new TextDecoder('latin1').decode(bytes);
@@ -393,37 +428,97 @@ function renderDiff() {
   renderDlDiff(a, b);
 }
 
+function rowHtml(label, nameSub, va, vb) {
+  const bothPresent = va !== undefined && va !== null && vb !== undefined && vb !== null;
+  const match = bothPresent && va === vb;
+  const cls = !bothPresent ? 'only' : match ? 'match' : 'mismatch';
+  const indicator = !bothPresent ? '–' : match ? '✓' : '✗';
+  return `<tr class="${cls}">
+    <td><span class="code">${escapeHtml(label)}</span><div class="field-name">${escapeHtml(nameSub || '')}</div></td>
+    <td>${escapeHtml(va ?? '—')}</td>
+    <td>${escapeHtml(vb ?? '—')}</td>
+    <td>${indicator}</td>
+  </tr>`;
+}
+
+function subfilesToString(subfiles) {
+  if (!subfiles || !subfiles.length) return '—';
+  return subfiles.map((s) => `${s.type}@${s.offset}+${s.length}`).join(', ');
+}
+
 function renderDlDiff(a, b) {
   const fa = parseAAMVA(a);
   const fb = parseAAMVA(b);
-  if (!fa && !fb) {
+  const ha = parseAAMVAHeader(a);
+  const hb = parseAAMVAHeader(b);
+
+  if (!fa && !fb && !ha && !hb) {
     dlDiff.innerHTML = '';
     return;
   }
 
-  const header = `<div class="dl-header">AAMVA Driver's License Fields ${fa ? '(D1: detected)' : '(D1: not detected)'} ${fb ? '(D2: detected)' : '(D2: not detected)'}</div>`;
-  const keys = Array.from(new Set([...Object.keys(fa || {}), ...Object.keys(fb || {})])).sort();
+  const header = `<div class="dl-header">AAMVA Driver's License ${fa || ha ? '(D1: detected)' : '(D1: not detected)'} ${fb || hb ? '(D2: detected)' : '(D2: not detected)'}</div>`;
 
-  let rows = '';
+  let headerRows = '';
+  const headerKeys = ['complianceIndicator', 'fileType', 'iin', 'aamvaVersion', 'jurisdictionVersion', 'subfileCount'];
+  for (const k of headerKeys) {
+    headerRows += rowHtml(k, HEADER_LABELS[k], ha?.[k], hb?.[k]);
+  }
+  headerRows += rowHtml('subfiles', 'Subfile Directory', subfilesToString(ha?.subfiles), subfilesToString(hb?.subfiles));
+
+  const keys = Array.from(new Set([...Object.keys(fa || {}), ...Object.keys(fb || {})])).sort();
+  let fieldRows = '';
   for (const k of keys) {
-    const va = fa?.[k];
-    const vb = fb?.[k];
-    const bothPresent = va !== undefined && vb !== undefined;
-    const match = bothPresent && va === vb;
-    const cls = !bothPresent ? 'only' : match ? 'match' : 'mismatch';
-    const indicator = !bothPresent ? '–' : match ? '✓' : '✗';
-    rows += `<tr class="${cls}">
-      <td><span class="code">${k}</span><div class="field-name">${escapeHtml(AAMVA_FIELDS[k] || '')}</div></td>
-      <td>${escapeHtml(va ?? '—')}</td>
-      <td>${escapeHtml(vb ?? '—')}</td>
-      <td>${indicator}</td>
-    </tr>`;
+    fieldRows += rowHtml(k, AAMVA_FIELDS[k], fa?.[k], fb?.[k]);
   }
 
-  dlDiff.innerHTML = header + `<table class="dl-table">
-    <thead><tr><th>Field</th><th>Device 1</th><th>Device 2</th><th></th></tr></thead>
-    <tbody>${rows}</tbody>
-  </table>`;
+  dlDiff.innerHTML = header + `
+    <div class="dl-section-label">Header</div>
+    <table class="dl-table">
+      <thead><tr><th>Field</th><th>Device 1</th><th>Device 2</th><th></th></tr></thead>
+      <tbody>${headerRows}</tbody>
+    </table>
+    <div class="dl-section-label">Subfile Fields</div>
+    <table class="dl-table">
+      <thead><tr><th>Field</th><th>Device 1</th><th>Device 2</th><th></th></tr></thead>
+      <tbody>${fieldRows}</tbody>
+    </table>
+    <div class="dl-actions"><button id="copy-md-btn">Copy Table as Markdown</button></div>`;
+
+  document.getElementById('copy-md-btn').addEventListener('click', () =>
+    copyDlTableAsMarkdown({ ha, hb, fa, fb, keys, headerKeys })
+  );
+}
+
+function copyDlTableAsMarkdown({ ha, hb, fa, fb, keys, headerKeys }) {
+  const escapeMd = (s) => String(s).replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
+  const mdRow = (code, name, va, vb) => {
+    const bothPresent = va !== undefined && va !== null && vb !== undefined && vb !== null;
+    const match = bothPresent && va === vb;
+    const indicator = !bothPresent ? '–' : match ? '✓' : '✗';
+    return `| ${code} | ${escapeMd(name || '')} | ${escapeMd(va ?? '—')} | ${escapeMd(vb ?? '—')} | ${indicator} |\n`;
+  };
+
+  let md = '### Header\n\n';
+  md += '| Field | Name | Device 1 | Device 2 | Match |\n';
+  md += '|-------|------|----------|----------|-------|\n';
+  for (const k of headerKeys) md += mdRow(k, HEADER_LABELS[k], ha?.[k], hb?.[k]);
+  md += mdRow('subfiles', 'Subfile Directory', subfilesToString(ha?.subfiles), subfilesToString(hb?.subfiles));
+
+  md += '\n### Subfile Fields\n\n';
+  md += '| Code | Field | Device 1 | Device 2 | Match |\n';
+  md += '|------|-------|----------|----------|-------|\n';
+  for (const k of keys) md += mdRow(k, AAMVA_FIELDS[k], fa?.[k], fb?.[k]);
+
+  navigator.clipboard.writeText(md).then(() => {
+    const btn = document.getElementById('copy-md-btn');
+    const orig = btn.textContent;
+    btn.textContent = 'Copied!';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = orig; btn.classList.remove('copied'); }, 900);
+  }).catch((e) => {
+    ioStatus.textContent = `Copy failed: ${e.message}`;
+  });
 }
 
 function bytesToHexCompact(bytes) {
@@ -461,17 +556,10 @@ async function exportToClipboard() {
   }
 }
 
-async function importFromClipboard() {
-  let text;
-  try {
-    text = await navigator.clipboard.readText();
-  } catch (e) {
-    ioStatus.textContent = `Read failed: ${e.message}`;
-    return;
-  }
+function importFromText(text, source) {
   const parts = text.split('---SPLIT---');
   if (parts.length !== 2) {
-    ioStatus.textContent = 'Clipboard missing ---SPLIT--- delimiter.';
+    ioStatus.textContent = `${source} missing ---SPLIT--- delimiter.`;
     return;
   }
   const a = hexToBytes(parts[0]);
@@ -485,6 +573,34 @@ async function importFromClipboard() {
   renderDiff();
   ioStatus.textContent = `Imported ${(a?.length ?? 0)} + ${(b?.length ?? 0)} bytes.`;
 }
+
+async function importFromClipboard() {
+  let text;
+  try {
+    text = await navigator.clipboard.readText();
+  } catch (e) {
+    ioStatus.textContent = `Read failed: ${e.message}`;
+    return;
+  }
+  importFromText(text, 'Clipboard');
+}
+
+function importFromFile() {
+  document.getElementById('import-file-input').click();
+}
+
+document.getElementById('import-file-input').addEventListener('change', async (e) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  try {
+    const text = await file.text();
+    importFromText(text, `File ${file.name}`);
+  } catch (err) {
+    ioStatus.textContent = `Read failed: ${err.message}`;
+  } finally {
+    e.target.value = '';
+  }
+});
 
 function exportToFile() {
   const a = slots['1'].lastBytes;
@@ -513,6 +629,7 @@ function exportToFile() {
 document.getElementById('export-btn').addEventListener('click', exportToClipboard);
 document.getElementById('export-file-btn').addEventListener('click', exportToFile);
 document.getElementById('import-btn').addEventListener('click', importFromClipboard);
+document.getElementById('import-file-btn').addEventListener('click', importFromFile);
 
 document.addEventListener('click', async (e) => {
   const copyBtn = e.target.closest('button[data-copy]');

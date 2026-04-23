@@ -199,3 +199,6 @@ button.clear:hover { background: #1f2937; }
 .dl-table .code { color: #93c5fd; font-weight: bold; }
 .dl-table .field-name { color: #9ca3af; font-size: 0.75rem; }
 .dl-header { color: #9ca3af; font-size: 0.9rem; margin-top: 1rem; font-weight: bold; }
+.dl-section-label { color: #c084fc; font-size: 0.85rem; margin-top: 1rem; font-weight: bold; text-transform: uppercase; letter-spacing: 0.05em; }
+.dl-actions { margin-top: 0.75rem; }
+.dl-actions button.copied { background: #065f46; }
