@@ -79,6 +79,24 @@ button.clear:hover { background: #1f2937; }
 .entry .hex { color: #86efac; }
 .entry .ascii { color: #fbbf24; margin-top: 0.2rem; }
 
+.copy-row {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  margin-top: 0.5rem;
+}
+.copy-row button {
+  padding: 0.25rem 0.6rem;
+  font-size: 0.75rem;
+  background: #1f2937;
+  color: #d1d5db;
+  border: 1px solid #374151;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.copy-row button:hover { background: #374151; }
+.copy-row button.copied { background: #065f46; color: #d1fae5; border-color: #065f46; }
+
 .dot {
   display: inline-block;
   width: 8px;

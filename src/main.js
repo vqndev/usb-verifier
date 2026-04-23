@@ -31,6 +31,13 @@ function createEntry(source) {
     <div class="meta"><span class="dot"></span> ${source} · <span class="count">0</span> bytes</div>
     <div class="hex"></div>
     <div class="ascii"></div>
+    <div class="copy-row">
+      <button data-copy="hex">Copy Hex</button>
+      <button data-copy="hex-compact">Copy Hex (compact)</button>
+      <button data-copy="ascii">Copy ASCII</button>
+      <button data-copy="bytes">Copy Byte Array</button>
+      <button data-copy="base64">Copy Base64</button>
+    </div>
   `;
   output.prepend(entry);
   return entry;
@@ -40,7 +47,53 @@ function updateEntry(entry, bytes) {
   entry.querySelector('.count').textContent = bytes.length;
   entry.querySelector('.hex').textContent = toHex(bytes);
   entry.querySelector('.ascii').textContent = toAscii(bytes);
+  entry._bytes = bytes;
 }
+
+function bytesToBase64(bytes) {
+  let s = '';
+  for (const b of bytes) s += String.fromCharCode(b);
+  return btoa(s);
+}
+
+async function copyFromEntry(entry, kind) {
+  const bytes = entry._bytes;
+  if (!bytes) return;
+  let text;
+  switch (kind) {
+    case 'hex': text = toHex(bytes); break;
+    case 'hex-compact': text = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join(''); break;
+    case 'ascii': text = toAscii(bytes); break;
+    case 'bytes': text = '[' + Array.from(bytes).join(', ') + ']'; break;
+    case 'base64': text = bytesToBase64(bytes); break;
+    default: return;
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+    flashCopied(entry, kind);
+  } catch (e) {
+    setStatus(`Copy failed: ${e.message}`);
+  }
+}
+
+function flashCopied(entry, kind) {
+  const btn = entry.querySelector(`button[data-copy="${kind}"]`);
+  if (!btn) return;
+  const orig = btn.textContent;
+  btn.textContent = 'Copied!';
+  btn.classList.add('copied');
+  setTimeout(() => {
+    btn.textContent = orig;
+    btn.classList.remove('copied');
+  }, 900);
+}
+
+output.addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-copy]');
+  if (!btn) return;
+  const entry = btn.closest('.entry');
+  if (entry) copyFromEntry(entry, btn.dataset.copy);
+});
 
 function makeAccumulator(source, idleMs = 150) {
   let chunks = [];
