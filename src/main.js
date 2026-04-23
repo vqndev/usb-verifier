@@ -27,13 +27,44 @@ function toAscii(bytes) {
 function logBytes(source, bytes) {
   const entry = document.createElement('div');
   entry.className = 'entry';
-  const t = new Date().toLocaleTimeString();
   entry.innerHTML = `
-    <div class="meta">[${t}] ${source} · ${bytes.length} bytes</div>
+    <div class="meta">${source} · ${bytes.length} bytes</div>
     <div class="hex">${toHex(bytes)}</div>
     <div class="ascii">${toAscii(bytes)}</div>
   `;
   output.prepend(entry);
+}
+
+function makeAccumulator(source, idleMs = 150) {
+  let chunks = [];
+  let total = 0;
+  let timer = null;
+
+  const flush = () => {
+    if (!total) return;
+    const merged = new Uint8Array(total);
+    let offset = 0;
+    for (const c of chunks) {
+      merged.set(c, offset);
+      offset += c.length;
+    }
+    chunks = [];
+    total = 0;
+    logBytes(source, merged);
+  };
+
+  return {
+    push(bytes) {
+      chunks.push(bytes);
+      total += bytes.length;
+      clearTimeout(timer);
+      timer = setTimeout(flush, idleMs);
+    },
+    flush() {
+      clearTimeout(timer);
+      flush();
+    },
+  };
 }
 
 async function stop() {
@@ -50,6 +81,7 @@ async function startSerial() {
   setStatus('Serial open @ 9600. Reading…');
 
   const reader = port.readable.getReader();
+  const acc = makeAccumulator('serial');
   let stopped = false;
 
   (async () => {
@@ -57,7 +89,7 @@ async function startSerial() {
       while (!stopped) {
         const { value, done } = await reader.read();
         if (done) break;
-        if (value && value.byteLength) logBytes('serial', value);
+        if (value && value.byteLength) acc.push(value);
       }
     } catch (e) {
       if (!stopped) setStatus(`Serial error: ${e.message}`);
@@ -67,6 +99,7 @@ async function startSerial() {
   active = {
     async stop() {
       stopped = true;
+      acc.flush();
       try { await reader.cancel(); } catch {}
       try { reader.releaseLock(); } catch {}
       try { await port.close(); } catch {}
@@ -112,18 +145,20 @@ async function startHid() {
   }
   setStatus(`HID open: ${device.productName} (vid=${info.vendorId} pid=${info.productId})`);
 
+  const acc = makeAccumulator('hid');
   const handler = (event) => {
     const data = new Uint8Array(event.data.buffer);
     const combined = new Uint8Array(1 + data.length);
     combined[0] = event.reportId;
     combined.set(data, 1);
-    logBytes('hid report', combined);
+    acc.push(combined);
   };
   device.addEventListener('inputreport', handler);
 
   active = {
     async stop() {
       device.removeEventListener('inputreport', handler);
+      acc.flush();
       try { await device.close(); } catch {}
     },
   };
