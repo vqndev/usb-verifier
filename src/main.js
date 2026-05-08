@@ -322,7 +322,7 @@ async function startSerial(slot) {
 async function startHid(slot) {
   if (!('hid' in navigator)) throw new Error('WebHID not supported');
   const devices = await navigator.hid.requestDevice({
-    filters: [{ usagePage: 0x8c }],
+    filters: [{ usagePage: 0x8c }, { usagePage: 0xff00 }],
   });
   if (!devices.length) throw new Error('No device selected');
   const device = devices[0];
@@ -340,10 +340,14 @@ async function startHid(slot) {
   const acc = makeAccumulator(slot, 'hid');
   const handler = (event) => {
     const data = new Uint8Array(event.data.buffer);
-    const combined = new Uint8Array(1 + data.length);
-    combined[0] = event.reportId;
-    combined.set(data, 1);
-    acc.push(combined);
+    if (event.reportId === 0) {
+      acc.push(data);
+    } else {
+      const combined = new Uint8Array(1 + data.length);
+      combined[0] = event.reportId;
+      combined.set(data, 1);
+      acc.push(combined);
+    }
   };
   device.addEventListener('inputreport', handler);
 
