@@ -1,5 +1,8 @@
 import './style.css';
 import { diffArrays } from 'diff';
+import { version } from '../package.json';
+
+document.getElementById('version').textContent = `v${version}`;
 
 const supportEl = document.getElementById('support');
 supportEl.textContent = [
@@ -7,6 +10,27 @@ supportEl.textContent = [
   `HID: ${'hid' in navigator ? 'yes' : 'no'}`,
   `Keyboard: always`,
 ].join('  |  ');
+
+const UDEV_CMD = `echo 'SUBSYSTEM=="hidraw", ATTRS{idVendor}=="04d8", ATTRS{idProduct}=="f057", MODE="0660", TAG+="uaccess"' | sudo tee /etc/udev/rules.d/70-mdlr-hidraw.rules && sudo udevadm control --reload-rules && sudo udevadm trigger --subsystem-match=hidraw`;
+
+const isLinux = /Linux/i.test(navigator.userAgent) && !/Android/i.test(navigator.userAgent);
+const linuxSetup = document.getElementById('linux-setup');
+if (isLinux && linuxSetup) {
+  linuxSetup.hidden = false;
+  document.getElementById('udev-cmd').textContent = UDEV_CMD;
+  document.getElementById('copy-udev-btn').addEventListener('click', async (e) => {
+    try {
+      await navigator.clipboard.writeText(UDEV_CMD);
+      const btn = e.currentTarget;
+      const orig = btn.textContent;
+      btn.textContent = 'Copied!';
+      btn.classList.add('copied');
+      setTimeout(() => { btn.textContent = orig; btn.classList.remove('copied'); }, 900);
+    } catch (err) {
+      console.error('Copy failed', err);
+    }
+  });
+}
 
 const diffVerdict = document.getElementById('diff-verdict');
 const diffView = document.getElementById('diff-view');

@@ -7,8 +7,23 @@
   </head>
   <body>
     <div id="app">
-      <h1>USB Verifier</h1>
+      <h1>USB Verifier <span class="version" id="version"></span></h1>
       <p class="support" id="support"></p>
+
+      <details id="linux-setup" class="setup-note" hidden>
+        <summary>Linux: grant Chrome access to the mDLR's hidraw nodes</summary>
+        <p>
+          On Linux, <code>/dev/hidraw*</code> nodes are root-only by default, so Chrome
+          can't open the L-Tron mDLR (USB ID <code>04d8:f057</code>). Run this once in a terminal,
+          then unplug/replug the device:
+        </p>
+        <pre id="udev-cmd"></pre>
+        <button id="copy-udev-btn">Copy command</button>
+        <p class="setup-hint">
+          The rule grants the logged-in user read/write access via udev's <code>uaccess</code> tag.
+          Other distros may use a different group (e.g. <code>plugdev</code>); adjust as needed.
+        </p>
+      </details>
 
       <div class="slots">
         <section class="slot" data-slot="1">
