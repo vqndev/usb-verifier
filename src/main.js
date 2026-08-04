@@ -415,12 +415,24 @@ function renderDiff() {
   const a = slots['1'].lastBytes;
   const b = slots['2'].lastBytes;
 
-  if (!a || !b) {
+  if (!a && !b) {
     diffVerdict.className = 'diff-verdict';
-    diffVerdict.textContent = a || b
-      ? `Waiting for scan on Device ${a ? '2' : '1'}…`
-      : 'Waiting for scans on both devices…';
+    diffVerdict.textContent = 'Waiting for scans on both devices…';
     diffView.innerHTML = '';
+    dlDiff.innerHTML = '';
+    return;
+  }
+
+  if (!a || !b) {
+    const x = a || b;
+    const which = a ? '1' : '2';
+    diffVerdict.className = 'diff-verdict';
+    diffVerdict.textContent = `Waiting for scan on Device ${a ? '2' : '1'}… showing Device ${which} (${x.length} bytes)`;
+    const hex = Array.from(x, (v) => v.toString(16).padStart(2, '0')).join(' ');
+    diffView.innerHTML =
+      `<span class="section-label">HEX (Device ${which})</span><span class="eq">${hex}</span>\n\n` +
+      `<span class="section-label">ASCII (Device ${which})</span><span class="eq">${escapeHtml(toAscii(x))}</span>`;
+    renderDlDiff(a, b);
     return;
   }
 
