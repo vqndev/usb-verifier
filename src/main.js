@@ -411,6 +411,61 @@ async function startKeyboard(slot) {
   };
 }
 
+// --- Capture bridge (local helper streaming OS-level Serial/HID over WS) ---
+
+const bridgeHostInput = document.getElementById('bridge-host');
+bridgeHostInput.value = localStorage.getItem('bridgeHost') || '';
+bridgeHostInput.addEventListener('input', () => localStorage.setItem('bridgeHost', bridgeHostInput.value));
+const bridgeHost = () => bridgeHostInput.value.trim() || bridgeHostInput.placeholder;
+
+function pickBridgeDevice(devices, kind) {
+  if (kind === 'serial') {
+    // prefer USB serial adapters over Bluetooth links
+    const ports = devices.serial;
+    return ports.find((p) => p.vid != null) || ports[0] || null;
+  }
+  // vendor-defined or bar-code-scanner usage pages, same filter as WebHID mode
+  const candidates = devices.hid.filter((d) => d.usage_page === 0xff00 || d.usage_page === 0x8c);
+  // wireless dongles etc. also expose vendor pages; prefer a scanner usage
+  // page, then a device whose vendor also enumerates a serial port
+  // (composite scanner), then whatever is left
+  const serialVids = new Set(devices.serial.map((p) => p.vid).filter((v) => v != null));
+  return candidates.find((d) => d.usage_page === 0x8c)
+    || candidates.find((d) => serialVids.has(d.vendor_id))
+    || candidates[0]
+    || null;
+}
+
+async function startBridge(slot, kind) {
+  const host = bridgeHost();
+  const r = await fetch(`http://${host}/devices`);
+  if (!r.ok) throw new Error(`bridge /devices: HTTP ${r.status}`);
+  const dev = pickBridgeDevice(await r.json(), kind);
+  if (!dev) throw new Error(`bridge found no ${kind} device`);
+
+  const qs = kind === 'serial'
+    ? `mode=serial&port=${encodeURIComponent(dev.port)}&baud=9600`
+    : `mode=hid&path=${encodeURIComponent(dev.path)}`;
+  const label = kind === 'serial' ? dev.port : (dev.product || 'HID device');
+  const ws = new WebSocket(`ws://${host}/stream?${qs}`);
+  ws.binaryType = 'arraybuffer';
+  const acc = makeAccumulator(slot, `bridge-${kind}`);
+
+  ws.onopen = () => setStatus(slot, `Bridge ${kind}: ${label} — reading…`);
+  ws.onmessage = (ev) => acc.push(new Uint8Array(ev.data));
+  ws.onerror = () => setStatus(slot, `Bridge ${kind}: connection error`);
+  ws.onclose = (ev) => {
+    if (slot.active) setStatus(slot, `Bridge ${kind}: closed${ev.reason ? ` (${ev.reason})` : ''}`);
+  };
+
+  slot.active = {
+    async stop() {
+      acc.flush();
+      try { ws.close(); } catch {}
+    },
+  };
+}
+
 function renderDiff() {
   const a = slots['1'].lastBytes;
   const b = slots['2'].lastBytes;
@@ -698,6 +753,8 @@ document.addEventListener('click', async (e) => {
     if (mode === 'serial') await startSerial(slot);
     else if (mode === 'hid') await startHid(slot);
     else if (mode === 'keyboard') await startKeyboard(slot);
+    else if (mode === 'bridge-serial') await startBridge(slot, 'serial');
+    else if (mode === 'bridge-hid') await startBridge(slot, 'hid');
   } catch (err) {
     setStatus(slot, `Error: ${err.message}`);
     console.error(err);

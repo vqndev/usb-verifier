@@ -25,6 +25,17 @@
         </p>
       </details>
 
+      <details id="bridge-setup" class="setup-note">
+        <summary>Capture bridge (optional, for scripted setups)</summary>
+        <p>
+          A small local helper (<code>bridge/bridge.py</code> in the repo) can capture
+          Serial/HID at the OS level and stream it here over a WebSocket, with no
+          browser device-chooser dialog. Run it on this machine, then use the
+          per-device <em>B-Serial</em> / <em>B-HID</em> buttons.
+        </p>
+        <label>Bridge host:port <input id="bridge-host" placeholder="localhost:8765" size="18" /></label>
+      </details>
+
       <div class="slots">
         <section class="slot" data-slot="1">
           <h2>Device 1</h2>
@@ -32,6 +43,8 @@
             <button data-mode="serial">Serial</button>
             <button data-mode="hid">HID</button>
             <button data-mode="keyboard">Keyboard</button>
+            <button data-mode="bridge-serial" title="Serial via local capture bridge">B-Serial</button>
+            <button data-mode="bridge-hid" title="HID via local capture bridge">B-HID</button>
             <button data-mode="stop" class="stop">Stop</button>
             <button data-mode="clear" class="clear">Clear</button>
           </div>
@@ -45,6 +58,8 @@
             <button data-mode="serial">Serial</button>
             <button data-mode="hid">HID</button>
             <button data-mode="keyboard">Keyboard</button>
+            <button data-mode="bridge-serial" title="Serial via local capture bridge">B-Serial</button>
+            <button data-mode="bridge-hid" title="HID via local capture bridge">B-HID</button>
             <button data-mode="stop" class="stop">Stop</button>
             <button data-mode="clear" class="clear">Clear</button>
           </div>
