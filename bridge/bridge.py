@@ -134,7 +134,9 @@ async def stream_hid(ws, query):
 
 
 async def stream_handler(request):
-    ws = web.WebSocketResponse()
+    # heartbeat so a vanished client (page reload, crash) is detected and
+    # the serial port / HID handle is released instead of held forever
+    ws = web.WebSocketResponse(heartbeat=5)
     await ws.prepare(request)
     mode = request.query.get("mode")
     try:
