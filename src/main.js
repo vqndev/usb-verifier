@@ -411,6 +411,62 @@ async function startKeyboard(slot) {
   };
 }
 
+// --- Per-slot import (hex text, export format, or raw binary) ---
+
+function parseSlotImport(buffer, slotId) {
+  const bytes = new Uint8Array(buffer);
+  // decode as text to see whether this is hex / export-format content
+  let text = null;
+  try {
+    text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch {
+    return bytes; // not text: raw binary capture
+  }
+  let body = text;
+  if (text.includes('---SPLIT---')) {
+    // whole-export file: take the half that matches this slot
+    const parts = text.split('---SPLIT---');
+    body = (slotId === '1' ? parts[0] : parts[1]) ?? '';
+    if (!body.trim()) throw new Error(`export has no data for Device ${slotId}`);
+  }
+  const clean = body.replace(/0x/gi, '').replace(/[\s,]/g, '').toLowerCase();
+  if (clean && /^[0-9a-f]+$/.test(clean) && clean.length % 2 === 0) {
+    const out = new Uint8Array(clean.length / 2);
+    for (let i = 0; i < out.length; i++) out[i] = parseInt(clean.slice(i * 2, i * 2 + 2), 16);
+    return out;
+  }
+  // plain text that isn't hex: keep its raw bytes
+  return bytes;
+}
+
+function importIntoSlot(slot, buffer, label) {
+  const data = parseSlotImport(buffer, slot.id);
+  injectBytesIntoSlot(slot, data, label);
+  renderDiff();
+  setStatus(slot, `Imported ${data.length} bytes (${label}).`);
+}
+
+async function importSlotFromClipboard(slot) {
+  const text = await navigator.clipboard.readText();
+  if (!text.trim()) throw new Error('clipboard is empty');
+  importIntoSlot(slot, new TextEncoder().encode(text).buffer, 'clipboard');
+}
+
+function importSlotFromFile(slot) {
+  const input = slot.el.querySelector('.slot-file-input');
+  input.onchange = async () => {
+    const file = input.files[0];
+    input.value = '';
+    if (!file) return;
+    try {
+      importIntoSlot(slot, await file.arrayBuffer(), file.name);
+    } catch (err) {
+      setStatus(slot, `Error: ${err.message}`);
+    }
+  };
+  input.click();
+}
+
 // --- Capture bridge (local helper streaming OS-level Serial/HID over WS) ---
 
 const bridgeHostInput = document.getElementById('bridge-host');
@@ -755,6 +811,8 @@ document.addEventListener('click', async (e) => {
     else if (mode === 'keyboard') await startKeyboard(slot);
     else if (mode === 'bridge-serial') await startBridge(slot, 'serial');
     else if (mode === 'bridge-hid') await startBridge(slot, 'hid');
+    else if (mode === 'import-file') importSlotFromFile(slot);
+    else if (mode === 'import-clip') await importSlotFromClipboard(slot);
   } catch (err) {
     setStatus(slot, `Error: ${err.message}`);
     console.error(err);
